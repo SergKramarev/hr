@@ -33,7 +33,7 @@ prev_year_rating_input <- layer_input(shape = 1, name = "prev_year_rating")
 length_input <- layer_input(shape = 1, name = "length_of_service")
 age_input <- layer_input(shape = 1, name = "age")
 age_started_input <- layer_input(shape = 1, name = "age_started")
-other_vars_input <- layer_input(shape = 9, name = "other_vars")
+other_vars_input <- layer_input(shape = 10, name = "other_vars")
   
 # Creating layers
 dep_layer <- department_input %>%
@@ -103,10 +103,10 @@ age_started_layer <- age_started_input %>%
   
 # Concatenating layers and adding more 
 combined_model <- layer_concatenate(c(dep_layer, 
-                                       reg_layer, 
+                                     #  reg_layer, 
                                         edu_layer, 
-                                        train_layer, 
-                                        age_started_layer,
+                                       # train_layer, 
+                                       # age_started_layer,
                                         other_vars_input), name = "concatination_layer") %>%
     layer_dense(128, activation = "relu") %>%
     layer_dense(64, activation = "relu") %>%
@@ -114,10 +114,10 @@ combined_model <- layer_concatenate(c(dep_layer,
     layer_dense(1, activation = "sigmoid")
   
 model <- keras_model(inputs = c(department_input,
-                                 region_input,
+                               #  region_input,
                                   education_input,
-                                  training_input,
-                                  age_started_input,
+                                #  training_input,
+                                 # age_started_input,
                                   other_vars_input),
                     outputs = combined_model)
   
