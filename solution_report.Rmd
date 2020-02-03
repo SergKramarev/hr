@@ -1,0 +1,225 @@
+---
+title: "HR Analytics Challenge solution report"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Introduction
+
+This report summarizes attempts to solve "HR Analytics Challenge" competition hosted on Analytics Vidhya (<https://datahack.analyticsvidhya.com/contest/all/>)
+
+
+The report contains following section:
+
+* [Competition overview](#Anchor1)
+* [Solution Description](#Anchor2)
+   + [Data](#Anchor3)
+   + [Exploratory Data Analysis](#Anchor4)
+   + [Preprocessing and Features Engeneering](#Anchor5)
+   + [Modelling](#Anchor6)
+     - [Initial model](#Anchor7)
+     - [Dense Embeddings for Categorical Variables](#Anchor8)
+* [Summary](#Anchor9)
+
+***
+<p><a id ="Anchor1"></a>
+
+
+### Competition overview
+
+The main task of the competition is to predict whether a person will be promoted or not. Competitors are provided with the dataset that reflects the main human resources parameters. The evaluation metric for this competition is F1 Score.
+
+
+For more information, see [competition page](https://datahack.analyticsvidhya.com/contest/wns-analytics-hackathon-2018-1/).
+
+
+***
+<p><a id ="Anchor2"></a>
+
+
+### Solution Description
+
+The solution in this report os rather quick one and don't include things that are heavily exploited in competitions such as:
+* hyperparameter tuning
+* ensemble modeling approach
+The solution is rather more focused on applying quite simple neural net modeling technic and compare it with the highly used xgboost method.
+
+***
+<p><a id ="Anchor3"></a>
+
+
+#### Data
+
+Only 3 files were provided by competition organizers:
+* train.csv - file with training set
+* test.csv - file with testing set
+* sample_submission.csv - example of submission file
+
+Use of any additional data is prohibited
+
+***
+<p><a id ="Anchor4"></a>
+
+
+#### Exploratory data analysis
+
+Some basic exploratory data analysis showed that the dataset is imbalanced - cases of promotion is only around 9% of all cases.
+There were no obvious errors in datasets and almost all cases were complete or it was quite easy to understand how to deal with some missing data in the dataset.
+
+Another main insight that I got from EDA was that *departments* have a quite different distribution of employees.
+For example here is distribution of average training scores across departments and different educational levels
+
+
+![](plots/training_score.png)
+
+Similar differences across departments have almost all variables in the dataset, another example is age distribution in departments
+![](plots/age_distribution.png)
+
+Similar differences were almost in all variables and in a population of promoted employees as well, that means that every department has its own set of conditions for a person's promotion which we, unfortunately, don't know.
+
+
+These differences across departments give some ideas about future features engineering, but initially, I had to preprocess given data.
+
+***
+<p><a id ="Anchor5"></a>
+
+
+#### Preprocessing and Features Engineering
+
+Data preprocessing was implemented as a separate function in order to facilitate further test set preparation. The code is available at 
+
+
+(LINK TO CODE)
+
+The main preprocessing steps were:
+* separating *age* and *length_of_service* variables into bins 
+* get rid of NA and fill them with mean or median values of corresponding variables
+
+In order to understand the importance of variables standard PCA analysis was conducted on the train set.
+
+![](plots/pca_analysis.png)
+
+As seen from plot ~61 of 70 components explain the majority of variance, but unfortunately, it's not a very big decrease in predictors and that is why we can't delete aby variables from our dataset.
+
+
+First thing that I did was to modify performance metrics of employees such as *KPIs_met*, *awards_won* and *previous_year_rating*. These are obviously quite important factors when you decide whether to promote your employee of not. Due to differences in departments, the importance of these factors can vary. For example, if you are the only one in a department who won an award, that is a very important factor but if you are one of many than the importance of this factor in much lower. By using such logic I created variables that measure the importance of variable in a certain department.
+
+Similarly, every department has its own promotion policy regarding *age* and *length of service*. That is why similar variables with the importance of age and length of service in the department were created.
+
+Finally, differences in regions were taken into account with region importance variable.
+
+After all preparations were done and train file was divided into test and train set it's time to create some basic modeling
+
+***
+<p><a id ="Anchor6"></a>
+
+
+#### Modelling
+
+<p><a id ="Anchor7"></a>
+
+##### *Initial models*
+
+
+To create a model to compare with I decided to use a popular "xgboost" method without hyperparameters tuning. It's quite simple using R caret package and previously prepared train set.
+
+```{r, eval=FALSE}
+library(caret)
+fit_xgboost <- train(as.factor(is_promoted)~., data = train_set, method = "xgbLinear")
+```
+
+After around 40 minutes I got a model which showed F1 score on test set 0.4917 which is quite good (leader score is 0.535).
+
+And to compare obtained results with something simple I used simple neural net with a one-hot encoding of categorical variables and 4 hidden layers with "relu" activation. What is important that I used adadelta optimizer which regulates the learning rate on its own and can train net where other optimizers stuck. Most common optimization functions such as adam and rmsprop gave worse results on this dataset:
+
+```{r, eval=FALSE}
+model <- keras_model_sequential()
+model %>%
+  layer_dense(256, activation = "relu") %>%
+  layer_dense(128, activation = "relu") %>%
+  layer_dense(128, activation = "relu") %>%
+  layer_dense(64, activation = "relu") %>%
+  layer_dense(1, activation = "sigmoid")
+
+opt <- optimizer_adadelta()
+
+model %>%
+  compile(
+    optimizer = opt,
+    loss = "binary_crossentropy",
+    metric = "acc"
+  )
+
+model %>%
+  fit(
+    x = as.matrix(select(train_set, -is_promoted)),
+    y = as.matrix(select(train_set, is_promoted)),
+    epochs = 50,
+    validation_data = list(as.matrix(select(test_set, -is_promoted)),
+                           as.matrix(select(test_set, is_promoted)))
+  )
+```
+
+After a couple of training minutes (training on GPU), I’ve got a model that was able to predict promotion decisions. The result of the neural net is a range of numbers between 0 and 1 and that is why to convert them into promotion decisions I selected threshold. When number, predicted by NN, is larger than threshold than employee is promoted when lower - not.
+Such a simple NN gave me F1 Score on the test set was 0.4910 which is 0.0007 points lower but 20 times faster.
+
+
+<p><a id ="Anchor8"></a>
+
+
+##### *Dense Embeddings for Categorical variables*
+
+However such simple approach leads to wide dataset which is quite sparse. To tackle this problem dense embeddings of categorical variables can be computed and feed into neural net as inputs. But threre is no pretrained embeddings for categories in my dataset. The most obvious solution is to gave neural net calculate embeddings from the data given. Some extra lines of code do the thing. 
+```{r, eval=FALSE}
+# Creating inputs to neural net  
+department_input <- layer_input(shape = 1, name = "department")
+education_input <- layer_input(shape = 1, name = "education")
+other_vars_input <- layer_input(shape = 10, name = "other_vars")
+  
+# Creating layers
+dep_layer <- department_input %>%
+    layer_embedding(input_dim = 9 + 1, output_dim = 5, input_length = 1) %>%
+    layer_flatten()
+  
+edu_layer <- education_input %>%
+    layer_embedding(input_dim = 4 + 1, output_dim = 3, input_length = 1) %>%
+    layer_flatten()
+
+# Concatenating layers and adding more
+combined_model <- layer_concatenate(c(dep_layer, 
+                                      edu_layer, 
+                                      other_vars_input)) %>%
+    layer_dense(64, activation = "relu") %>%
+    layer_dense(32, activation = "relu") %>%
+    layer_dense(32, activation = "relu") %>%
+    layer_dense(1, activation = "sigmoid")
+  
+model <- keras_model(inputs = c(department_input,
+                                education_input,
+                                other_vars_input),
+                    outputs = combined_model)
+  
+```
+
+After some tuning and learning, I’ve got the result on test set 0.5168 that is 0.0198 points lower than the leader in this competition (only 146 place from ~10000 competitors). What is the best part of neural nets approach is that training of such model lasts the only a couple of minutes
+
+![](plots/training.png)
+
+
+***
+<p><a id ="Anchor9"></a>
+
+
+### Summary
+
+In my approach, I don't use such common technics as cross-validation of ensembling technics that are usually allowed to increase score intentionally. The main reason for this is that such technics significantly increase the complexity of the model and I believe that a simple model is always better than a complex model. 
+
+
+
+
+
+
+
