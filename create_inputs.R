@@ -17,11 +17,10 @@ create_inputs <- function(dataset = NULL){
                             "avg_training_score", 
                             "is_new_employee",
                             "previous_year_index",
-                            #"length_index1",
-                            "length_index2",
-                            #"age_index1",
-                            "age_index2",
-                            "region_index"
+                            "length_index",
+                            "age_index",
+                            "region_index",
+                            "smart_index1"
                           )]))
   )
 }
